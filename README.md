@@ -1,3 +1,4 @@
+1.21.1 Neoforge
 📊 Main Panel
 Coordinates (XYZ)
 Direction (compass)

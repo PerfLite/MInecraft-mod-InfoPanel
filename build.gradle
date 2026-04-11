@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.gradle.userdev' version '7.0.142'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+dependencies {
+    implementation "net.neoforged:neoforge:${neo_version}"
+}
+
+runs {
+    client {
+        workingDirectory project.file('run')
+        systemProperty 'forge.logging.console.level', 'warn'
+        jvmArguments '-Xmx2G'
+        programArguments '--quickPlaySingleplayer', 'New World'
+        modSource sourceSets.main
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

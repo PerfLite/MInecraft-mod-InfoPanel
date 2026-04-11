@@ -1,0 +1,8 @@
+{
+  "key.categories.infopanel": "InfoPanel",
+  "key.infopanel.toggle": "Показать/скрыть HUD",
+  "key.infopanel.config": "Открыть настройки",
+  "key.infopanel.light_overlay": "Оверлей освещения",
+
+  "infopanel.config.title": "Настройки InfoPanel"
+}

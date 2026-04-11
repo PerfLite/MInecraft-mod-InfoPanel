@@ -1,0 +1,16 @@
+{
+  "key.categories.infopanel": "InfoPanel",
+  "key.infopanel.toggle": "Toggle HUD",
+  "key.infopanel.config": "Open Settings",
+  "key.infopanel.light_overlay": "Light Overlay",
+  "key.infopanel.edit_layout": "Edit Layout",
+
+  "infopanel.config.title": "InfoPanel Settings",
+
+  "infopanel.hud.biome": "Biome: ",
+  "infopanel.hud.ping": "Ping: ",
+  "infopanel.hud.players": "Players: ",
+  "infopanel.hud.session": "Session: ",
+  "infopanel.hud.time": "Time: ",
+  "infopanel.hud.unknown": "Unknown"
+}

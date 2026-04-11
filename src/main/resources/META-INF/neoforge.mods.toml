@@ -1,0 +1,28 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mixins]]
+    config = "infopanel.mixins.json"
+
+[[mods]]
+    modId = "infopanel"
+    version = "1.0"
+    displayName = "InfoPanel"
+    description = "Minimalistic HUD - coordinates, biome, direction. Similar to MiniHud."
+    authors = "PerfLite"
+    logoFile = "logo.png"
+
+[[dependencies.infopanel]]
+    modId = "neoforge"
+    type = "REQUIRED"
+    versionRange = "[21.1.0,22.0.0)"
+    ordering = "NONE"
+    side = "CLIENT"
+
+[[dependencies.infopanel]]
+    modId = "minecraft"
+    type = "REQUIRED"
+    versionRange = "[1.21.1,1.22)"
+    ordering = "NONE"
+    side = "CLIENT"

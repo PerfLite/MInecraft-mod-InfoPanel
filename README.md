@@ -73,3 +73,4 @@ White, light gray, gray, red, orange, yellow, green, dark green, cyan, blue, dar
 
 📜 License
 MIT License — free to use in any modpack.
+https://cdn.modrinth.com/data/cached_images/57d0f4372f033c67b0c31374192e20482b01a803.png

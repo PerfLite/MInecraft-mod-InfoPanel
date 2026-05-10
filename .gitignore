@@ -1,6 +1,7 @@
 .gradle/
 .idea/
 .vscode/
+.gitignore/
 build/
 gradle/
 runs/

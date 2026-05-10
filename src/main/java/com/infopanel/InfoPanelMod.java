@@ -35,5 +35,6 @@ public class InfoPanelMod {
         NeoForge.EVENT_BUS.register(new SlimeChunkRenderer());
         NeoForge.EVENT_BUS.register(new CompassRenderer());
         NeoForge.EVENT_BUS.register(new StructureRenderer());
+        // PickupLogRenderer регистрируется автоматически через @EventBusSubscriber
     }
 }

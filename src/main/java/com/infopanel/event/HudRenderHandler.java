@@ -19,15 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-// Utility: true when the game language starts with "ru"
-class Lang {
-    static boolean isRussian() {
-        try {
-            String lang = net.minecraft.client.Minecraft.getInstance().options.languageCode;
-            return lang != null && lang.startsWith("ru");
-        } catch (Exception e) { return false; }
-    }
-}
 
 public class HudRenderHandler {
 
@@ -44,7 +35,18 @@ public class HudRenderHandler {
     private static int tickCount = 0;
     private static float cachedTps = 20.0f;
 
-    private record HudLine(String text, int color) {}
+    private static final net.minecraft.resources.ResourceLocation TEX_SUN  =
+        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("infopanel", "textures/icon_sun.png");
+    private static final net.minecraft.resources.ResourceLocation TEX_MOON =
+        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("infopanel", "textures/icon_moon.png");
+
+    // Размер иконок в пикселях (ширина = высота PNG файла)
+    private static final int ICON_TEX_SIZE = 16;
+
+    // icon: null = нет иконки, иначе ResourceLocation текстуры
+    private record HudLine(String text, int color, net.minecraft.resources.ResourceLocation icon) {
+        HudLine(String text, int color) { this(text, color, null); }
+    }
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.Key event) {
@@ -55,7 +57,13 @@ public class HudRenderHandler {
             InfoPanelConfig.setShowSlimeChunks(!InfoPanelConfig.isShowSlimeChunks());
         if (KeyBindings.OPEN_CONFIG.consumeClick()) {
             Minecraft mc = Minecraft.getInstance();
-            mc.setScreen(new InfoPanelConfigScreen(mc.screen));
+            if (mc.screen instanceof InfoPanelConfigScreen) {
+                // Уже открыт — закрываем
+                InfoPanelConfig.save();
+                mc.setScreen(null);
+            } else {
+                mc.setScreen(new InfoPanelConfigScreen(mc.screen));
+            }
         }
         if (KeyBindings.EDIT_LAYOUT.consumeClick()) {
             Minecraft mc = Minecraft.getInstance();
@@ -113,7 +121,10 @@ public class HudRenderHandler {
         }
 
         if (InfoPanelConfig.isShowTime()) {
-            lines.add(new HudLine(getGameTime(mc), InfoPanelConfig.colorTime));
+            long dayTime = mc.level.getDayTime() % 24000;
+            boolean isNight = dayTime >= 13000;
+            lines.add(new HudLine(getGameTime(mc), InfoPanelConfig.colorTime,
+                    isNight ? TEX_MOON : TEX_SUN));
         }
 
         if (InfoPanelConfig.isShowSession()) {
@@ -135,9 +146,13 @@ public class HudRenderHandler {
         int lineH       = (int)(11 * scale);
         int totalHeight = lineH * lines.size();
 
+        // Считаем ширину с учётом иконок (иконка после текста: textW + GAP + ICON_RAW)
+        final int ICON_RAW = 10;
+        final int ICON_GAP = 2;
         int maxRawWidth = 0;
         for (HudLine line : lines) {
-            int w = mc.font.width(Component.literal(line.text()));
+            int w = mc.font.width(line.text());
+            if (line.icon() != null) w += ICON_GAP + ICON_RAW;
             if (w > maxRawWidth) maxRawWidth = w;
         }
         int scaledWidth = (int)(maxRawWidth * scale);
@@ -178,9 +193,45 @@ public class HudRenderHandler {
         graphics.pose().translate(startX + padding, startY + padding, 0);
         graphics.pose().scale(scale, scale, 1.0f);
         for (int i = 0; i < lines.size(); i++) {
-            String text = lines.get(i).text();
-            int color = 0xFF000000 | lines.get(i).color();
-            graphics.drawString(mc.font, text, 0, i * 11, color, true);
+            HudLine line = lines.get(i);
+            int color = 0xFF000000 | line.color();
+            int textX = 0;
+            int lineY = i * 11;
+
+            if (line.icon() != null) {
+                // Сначала рисуем текст
+                graphics.drawString(mc.font, line.text(), 0, lineY, color, true);
+
+                // Иконка после текста: отступ = ширина текста + GAP
+                int textWidth = mc.font.width(line.text());
+                int iconX = textWidth + ICON_GAP;
+                // Выравниваем иконку по базовой линии текста: шрифт рисуется с Y=lineY,
+                // высота глифа ~7px, иконка 10px — сдвигаем на -1 чтобы верх совпал
+                int iconY = lineY - 1;
+
+                com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0, line.icon());
+                com.mojang.blaze3d.systems.RenderSystem.setShader(
+                    net.minecraft.client.renderer.GameRenderer::getPositionTexShader);
+                com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+                com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
+                com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+
+                org.joml.Matrix4f mat = graphics.pose().last().pose();
+                com.mojang.blaze3d.vertex.BufferBuilder buf =
+                    com.mojang.blaze3d.vertex.Tesselator.getInstance()
+                        .begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,
+                               com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX);
+                float x0 = iconX, y0 = iconY, x1 = iconX + ICON_RAW, y1 = iconY + ICON_RAW;
+                buf.addVertex(mat, x0, y0, 0).setUv(0f, 0f);
+                buf.addVertex(mat, x0, y1, 0).setUv(0f, 1f);
+                buf.addVertex(mat, x1, y1, 0).setUv(1f, 1f);
+                buf.addVertex(mat, x1, y0, 0).setUv(1f, 0f);
+                com.mojang.blaze3d.vertex.BufferUploader.drawWithShader(buf.buildOrThrow());
+
+                com.mojang.blaze3d.systems.RenderSystem.disableBlend();
+            } else {
+                graphics.drawString(mc.font, line.text(), textX, lineY, color, true);
+            }
         }
         graphics.pose().popPose();
     }
@@ -249,32 +300,30 @@ public class HudRenderHandler {
         long time = mc.level.getDayTime() % 24000;
         long hours = (time / 1000 + 6) % 24;
         long minutes = (time % 1000) * 60 / 1000;
-        boolean isDay = time >= 0 && time < 13000;
-        String period = isDay ? "☀" : "☽";
         String label = Lang.isRussian() ? "Время: " : "Time: ";
-        return String.format(label + "%02d:%02d %s", hours, minutes, period);
+        return String.format(label + "%02d:%02d", hours, minutes);
     }
 
     private String getDirection(float yRot) {
         float n = ((yRot % 360) + 360) % 360;
         if (Lang.isRussian()) {
-            if (n < 22.5 || n >= 337.5) return "Юг (S)";
-            if (n < 67.5)  return "ЮЗ (SW)";
-            if (n < 112.5) return "Запад (W)";
-            if (n < 157.5) return "СЗ (NW)";
-            if (n < 202.5) return "Север (N)";
-            if (n < 247.5) return "СВ (NE)";
-            if (n < 292.5) return "Восток (E)";
-            return "ЮВ (SE)";
+            if (n < 22.5 || n >= 337.5) return "Юг (-Z)";
+            if (n < 67.5)  return "ЮЗ (-X-Z)";
+            if (n < 112.5) return "Запад (-X)";
+            if (n < 157.5) return "СЗ (-X+Z)";
+            if (n < 202.5) return "Север (+Z)";
+            if (n < 247.5) return "СВ (+X+Z)";
+            if (n < 292.5) return "Восток (+X)";
+            return "ЮВ (+X-Z)";
         } else {
-            if (n < 22.5 || n >= 337.5) return "South (S)";
-            if (n < 67.5)  return "SW";
-            if (n < 112.5) return "West (W)";
-            if (n < 157.5) return "NW";
-            if (n < 202.5) return "North (N)";
-            if (n < 247.5) return "NE";
-            if (n < 292.5) return "East (E)";
-            return "SE";
+            if (n < 22.5 || n >= 337.5) return "South (-Z)";
+            if (n < 67.5)  return "SW (-X-Z)";
+            if (n < 112.5) return "West (-X)";
+            if (n < 157.5) return "NW (-X+Z)";
+            if (n < 202.5) return "North (+Z)";
+            if (n < 247.5) return "NE (+X+Z)";
+            if (n < 292.5) return "East (+X)";
+            return "SE (+X-Z)";
         }
     }
 

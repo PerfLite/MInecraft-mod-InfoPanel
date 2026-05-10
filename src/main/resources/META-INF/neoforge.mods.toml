@@ -7,7 +7,7 @@ license = "MIT"
 
 [[mods]]
     modId = "infopanel"
-    version = "1.0"
+    version = "1.2"
     displayName = "InfoPanel"
     description = "Minimalistic HUD - coordinates, biome, direction. Similar to MiniHud."
     authors = "PerfLite"

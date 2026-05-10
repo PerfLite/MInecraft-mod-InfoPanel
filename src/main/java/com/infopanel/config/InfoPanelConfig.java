@@ -60,6 +60,22 @@ public class InfoPanelConfig {
     public static boolean showDurability   = true;
     public static boolean showSlimeChunks  = false;
     public static int wailaY              = 6;
+
+    // Звук портала
+    public static boolean portalSoundEnabled  = true;
+    public static float   portalSoundVolume   = 1.0f;
+    // Звук перехода через портал (trigger + travel)
+    public static boolean portalTravelEnabled = true;
+    public static float   portalTravelVolume  = 1.0f;
+
+    // Показ поднятых предметов (SkyUI-style)
+    public static boolean showPickupLog      = true;
+    public static int     pickupLogX         = -1;  // -1 = авто
+    public static int     pickupLogY         = -1;
+    public static int     pickupLogBgAlpha   = 120;
+    public static int     pickupLogMaxItems  = 5;
+    public static int     pickupLogLifetime  = 5;   // секунды (2–10)
+    public static float   pickupLogScale     = 1.0f; // масштаб (0.5–2.0)
     public static WailaPosition wailaPosition = WailaPosition.TOP_CENTER;
     public static int wailaBgAlpha        = 170;
 
@@ -119,6 +135,17 @@ public class InfoPanelConfig {
                     showDurability   = data.showDurability;
                     showSlimeChunks  = data.showSlimeChunks;
                     wailaY           = data.wailaY;
+                    portalSoundEnabled = data.portalSoundEnabled;
+                    portalSoundVolume  = data.portalSoundVolume;
+                    portalTravelEnabled = data.portalTravelEnabled;
+                    portalTravelVolume  = data.portalTravelVolume;
+                    showPickupLog      = data.showPickupLog;
+                    pickupLogX         = data.pickupLogX;
+                    pickupLogY         = data.pickupLogY;
+                    pickupLogBgAlpha   = data.pickupLogBgAlpha;
+                    pickupLogMaxItems  = data.pickupLogMaxItems;
+                    pickupLogLifetime  = data.pickupLogLifetime;
+                    pickupLogScale     = data.pickupLogScale;
                     wailaBgAlpha     = data.wailaBgAlpha;
                     try { wailaPosition = WailaPosition.valueOf(data.wailaPosition); } catch (Exception ignored) {}
                     colorCoords      = data.colorCoords;
@@ -196,6 +223,17 @@ public class InfoPanelConfig {
             data.showDurability  = showDurability;
             data.showSlimeChunks = showSlimeChunks;
             data.wailaY          = wailaY;
+            data.portalSoundEnabled = portalSoundEnabled;
+            data.portalSoundVolume  = portalSoundVolume;
+            data.portalTravelEnabled = portalTravelEnabled;
+            data.portalTravelVolume  = portalTravelVolume;
+            data.showPickupLog      = showPickupLog;
+            data.pickupLogX         = pickupLogX;
+            data.pickupLogY         = pickupLogY;
+            data.pickupLogBgAlpha   = pickupLogBgAlpha;
+            data.pickupLogMaxItems  = pickupLogMaxItems;
+            data.pickupLogLifetime  = pickupLogLifetime;
+            data.pickupLogScale     = pickupLogScale;
             data.wailaBgAlpha    = wailaBgAlpha;
             data.wailaPosition   = wailaPosition.name();
             data.colorCoords     = colorCoords;
@@ -281,6 +319,29 @@ public class InfoPanelConfig {
     public static void setShowDurability(boolean v)  { showDurability = v; save(); }
     public static boolean isShowSlimeChunks()        { return showSlimeChunks; }
     public static void setShowSlimeChunks(boolean v) { showSlimeChunks = v; save(); }
+
+    public static boolean isPortalSoundEnabled()         { return portalSoundEnabled; }
+    public static void setPortalSoundEnabled(boolean v)  { portalSoundEnabled = v; save(); }
+    public static float getPortalSoundVolume()           { return portalSoundVolume; }
+    public static void setPortalSoundVolume(float v)     { portalSoundVolume = Math.max(0f, Math.min(1f, v)); save(); }
+    public static boolean isPortalTravelEnabled()        { return portalTravelEnabled; }
+    public static void setPortalTravelEnabled(boolean v) { portalTravelEnabled = v; save(); }
+    public static float getPortalTravelVolume()          { return portalTravelVolume; }
+    public static void setPortalTravelVolume(float v)    { portalTravelVolume = Math.max(0f, Math.min(1f, v)); save(); }
+
+    public static boolean isShowPickupLog()              { return showPickupLog; }
+    public static void setShowPickupLog(boolean v)       { showPickupLog = v; save(); }
+    public static int getPickupLogX()                    { return pickupLogX; }
+    public static int getPickupLogY()                    { return pickupLogY; }
+    public static void setPickupLogPos(int x, int y)     { pickupLogX = x; pickupLogY = y; save(); }
+    public static int getPickupLogBgAlpha()              { return pickupLogBgAlpha; }
+    public static void setPickupLogBgAlpha(int v)        { pickupLogBgAlpha = Math.max(0, Math.min(255, v)); save(); }
+    public static int getPickupLogMaxItems()             { return pickupLogMaxItems; }
+    public static void setPickupLogMaxItems(int v)       { pickupLogMaxItems = Math.max(1, Math.min(20, v)); save(); }
+    public static int getPickupLogLifetime()             { return pickupLogLifetime; }
+    public static void setPickupLogLifetime(int v)       { pickupLogLifetime = Math.max(2, Math.min(20, v)); save(); }
+    public static float getPickupLogScale()              { return pickupLogScale; }
+    public static void setPickupLogScale(float v)        { pickupLogScale = Math.max(0.5f, Math.min(2.0f, v)); save(); }
     public static void setShowPlayers(boolean v)   { showPlayers = v; save(); }
     public static int getWailaY()                       { return wailaY; }
     public static void setWailaY(int v)                 { wailaY = v; save(); }
@@ -316,6 +377,16 @@ public class InfoPanelConfig {
         boolean showTargetBlock = true, showPlayers = true, showEffectTimers = true;
         boolean showDurability = true, showSlimeChunks = false;
         int wailaY = 6, wailaBgAlpha = 170;
+        boolean portalSoundEnabled = true;
+        float portalSoundVolume = 1.0f;
+        boolean portalTravelEnabled = true;
+        float portalTravelVolume = 1.0f;
+        boolean showPickupLog = true;
+        int pickupLogX = -1, pickupLogY = -1;
+        int pickupLogBgAlpha = 120;
+        int pickupLogMaxItems = 5;
+        int pickupLogLifetime = 5;
+        float pickupLogScale = 1.0f;
         String wailaPosition = "TOP_CENTER";
         int colorCoords = 0xFFFFFF, colorDirection = 0x55FF55, colorBiome = 0x55FFFF;
         int colorLightSafe = 0x55FF55, colorLightWarn = 0xFF5555;

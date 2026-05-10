@@ -2,19 +2,41 @@ package com.infopanel.client;
 
 import com.infopanel.config.InfoPanelConfig;
 import com.infopanel.config.InfoPanelConfig.Position;
+import com.infopanel.event.Lang;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
+
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
 
 public class InfoPanelConfigScreen extends Screen {
 
     private final Screen parent;
-
-    // Текущая вкладка: 0 = Панель, 1 = Строки, 2 = WAILA & Прочее
     private int activeTab = 0;
-    private static final String[] TAB_LABELS = { "  Панель  ", "  Строки  ", "  WAILA  ", "  Структуры  " };
+
+    // ── Layout ────────────────────────────────────────────────────────
+    private static final int NAV_W    = 88;   // ширина левой панели навигации
+    private static final int NAV_PAD  = 6;    // отступ внутри навигации
+    private static final int NAV_BTN_H = 22;  // высота кнопки навигации
+    private static final int NAV_GAP  = 2;    // зазор между кнопками навигации
+    private static final int CONTENT_X_OFF = NAV_W + 8; // отступ контента от левого края
+    private static final int BTN_H    = 20;
+    private static final int STEP     = 24;
+    private static final int SLIDER_H = 20;
+
+    // Цвета UI
+    private static final int COL_NAV_BG      = 0xCC1A1A1A;
+    private static final int COL_NAV_ACTIVE  = 0xFF2255AA;
+    private static final int COL_NAV_HOVER   = 0x882255AA;
+    private static final int COL_SECTION_LINE= 0x88AAAAAA;
+    private static final int COL_SECTION_TXT = 0xFFAAAA55;
+    private static final int COL_CONTENT_BG  = 0x881A1A1A;
 
     private static final int[] COLORS = {
         0xFFFFFF, 0xAAAAAA, 0x555555,
@@ -24,320 +46,437 @@ public class InfoPanelConfigScreen extends Screen {
         0xFF55FF, 0xAA00AA,
     };
 
-    // Константы layout
-    private static final int TAB_H    = 20;
-    private static final int TAB_Y    = 14;
-    private static final int CONTENT_Y = TAB_Y + TAB_H + 6;
-    private static final int BTN_H    = 20;
-    private static final int STEP     = 23;
+    private static boolean ru() { return Lang.isRussian(); }
+    private static String t(String key) {
+        return net.minecraft.client.resources.language.I18n.get(key);
+    }
+
+    // Категории навигации
+    private static final String[] CAT_KEYS = {
+        "infopanel.config.tab.panel",
+        "infopanel.config.tab.rows",
+        "infopanel.config.tab.waila",
+        "infopanel.config.tab.structures",
+        "infopanel.config.tab.sounds"
+    };
+    // Иконки категорий (символы)
+    private static final String[] CAT_ICONS = { "⚙", "☰", "◎", "⬡", "♪" };
 
     public InfoPanelConfigScreen(Screen parent) {
-        super(Component.literal("InfoPanel — Настройки"));
+        super(Component.literal("InfoPanel"));
         this.parent = parent;
         InfoPanelConfig.load();
     }
 
     @Override
-    protected void init() {
-        int cx   = this.width / 2;
-        int tabW = 80;
-        int totalW = TAB_LABELS.length * (tabW + 2);
-        int tabStartX = cx - totalW / 2;
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Y или Esc — закрыть
+        if (keyCode == 256 || keyCode == GLFW.GLFW_KEY_Y) {
+            InfoPanelConfig.save();
+            this.minecraft.setScreen(parent);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
 
-        // ── Кнопки вкладок ──────────────────────────────────────────────
-        for (int i = 0; i < TAB_LABELS.length; i++) {
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // Не рисуем стандартный MC фон — рисуем свой в render()
+    }
+
+    @Override
+    public boolean isPauseScreen() { return false; }
+
+    // ── Вычисляем рабочую область контента ───────────────────────────
+    private static final int CONTENT_MAX_W = 300;
+    private int contentX() { return CONTENT_X_OFF + 4; }
+    private int contentY() { return 42; }  // ниже заголовка вкладки
+    private int contentW() { return Math.min(this.width - CONTENT_X_OFF - 8, CONTENT_MAX_W); }
+
+    @Override
+    protected void init() {
+        sectionHeaders.clear();
+
+        // ── Кнопки навигации (левая панель) ──────────────────────────
+        int navY = contentY() + 4;
+        for (int i = 0; i < CAT_KEYS.length; i++) {
             final int idx = i;
-            String label = (activeTab == idx ? "§e" : "§7") + TAB_LABELS[idx];
+            String label = CAT_ICONS[i] + " " + t(CAT_KEYS[i]).trim();
             this.addRenderableWidget(
-                Button.builder(Component.literal(label), btn -> {
+                Button.builder(Component.literal(activeTab == idx ? "§e" + label : "§7" + label), btn -> {
                     activeTab = idx;
                     rebuildWidgets();
-                }).bounds(tabStartX + idx * (tabW + 2), TAB_Y, tabW, TAB_H).build()
+                }).bounds(NAV_PAD, navY + idx * (NAV_BTN_H + NAV_GAP), NAV_W - NAV_PAD * 2, NAV_BTN_H).build()
             );
         }
 
-        // ── Контент вкладки ──────────────────────────────────────────────
+        // ── Контент активной вкладки ──────────────────────────────────
         switch (activeTab) {
-            case 0 -> buildTabPanel(cx);
-            case 1 -> buildTabRows(cx);
-            case 2 -> buildTabWaila(cx);
-            case 3 -> buildTabStructures(cx);
+            case 0 -> buildPanel();
+            case 1 -> buildRows();
+            case 2 -> buildWaila();
+            case 3 -> buildStructures();
+            case 4 -> buildSounds();
         }
+
+        // ── Кнопка Закрыть внизу ─────────────────────────────────────
+        this.addRenderableWidget(
+            Button.builder(Component.literal(ru() ? "§7✖  Закрыть" : "§7✖  Close"),
+                btn -> { InfoPanelConfig.save(); this.minecraft.setScreen(parent); })
+                .bounds(NAV_PAD, this.height - 28, NAV_W - NAV_PAD * 2, 20).build()
+        );
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // Вкладка 0 — Панель (позиция, размер, фон)
+    // Вкладка 0 — Панель
     // ════════════════════════════════════════════════════════════════════
-    private void buildTabPanel(int cx) {
-        int w = 220;
-        int y = CONTENT_Y;
+    private void buildPanel() {
+        int x = contentX();
+        int w = contentW();
+        int y = contentY() + 8;
 
-        // Слайдер прозрачности фона
-        this.addRenderableWidget(new AbstractSliderButton(cx - w / 2, y, w, BTN_H,
-                Component.literal("Фон панели: " + InfoPanelConfig.getBgAlpha()),
-                InfoPanelConfig.getBgAlpha() / 255.0) {
-            @Override protected void updateMessage() {
-                InfoPanelConfig.setBgAlpha((int)(value * 255));
-                setMessage(Component.literal("Фон панели: " + InfoPanelConfig.getBgAlpha()));
-            }
-            @Override protected void applyValue() { InfoPanelConfig.setBgAlpha((int)(value * 255)); }
-        });
+        // Секция: Внешний вид
+        y = sectionY(y); // резервируем место под заголовок секции
+        y += 4;
+
+        // Слайдер фона
+        addSlider(x, y, w, "infopanel.config.panel.bg",
+            InfoPanelConfig.getBgAlpha() / 255.0,
+            v -> InfoPanelConfig.setBgAlpha((int)(v * 255)),
+            v -> t("infopanel.config.panel.bg") + (int)(v * 255));
         y += STEP;
 
         // Слайдер масштаба
-        this.addRenderableWidget(new AbstractSliderButton(cx - w / 2, y, w, BTN_H,
-                Component.literal(String.format("Масштаб: %.1f×", InfoPanelConfig.getScale())),
-                (InfoPanelConfig.getScale() - 0.5) / 1.5) {
-            @Override protected void updateMessage() {
-                float s = (float)(0.5 + value * 1.5);
-                InfoPanelConfig.setScale(s);
-                setMessage(Component.literal(String.format("Масштаб: %.1f×", s)));
-            }
-            @Override protected void applyValue() { InfoPanelConfig.setScale((float)(0.5 + value * 1.5)); }
-        });
-        y += STEP + 6;
+        addSlider(x, y, w, "infopanel.config.panel.scale",
+            (InfoPanelConfig.getScale() - 0.5) / 1.5,
+            v -> InfoPanelConfig.setScale((float)(0.5 + v * 1.5)),
+            v -> String.format(t("infopanel.config.panel.scale") + "%.1f×", 0.5 + v * 1.5));
+        y += STEP + 8;
 
-        // Заголовок «Позиция»
-        final int labelY = y;
-        // 4 кнопки позиции 2×2
+        // Секция: Позиция
+        y = sectionY(y);
+        y += 4;
+
         int hw = w / 2 - 2;
-        this.addRenderableWidget(Button.builder(
-                Component.literal(pos(Position.TOP_LEFT) + "↖ Верх-Лево"),
-                btn -> { InfoPanelConfig.setPosition(Position.TOP_LEFT); rebuildWidgets(); })
-                .bounds(cx - w / 2, y, hw, BTN_H).build());
-        this.addRenderableWidget(Button.builder(
-                Component.literal(pos(Position.TOP_RIGHT) + "Верх-Право ↗"),
-                btn -> { InfoPanelConfig.setPosition(Position.TOP_RIGHT); rebuildWidgets(); })
-                .bounds(cx + 2, y, hw, BTN_H).build());
+        addPosBtn(x,        y, hw, Position.TOP_LEFT,    t("infopanel.config.panel.topleft"));
+        addPosBtn(x + hw + 2, y, hw, Position.TOP_RIGHT,  t("infopanel.config.panel.topright"));
         y += STEP;
-        this.addRenderableWidget(Button.builder(
-                Component.literal(pos(Position.BOTTOM_LEFT) + "↙ Низ-Лево"),
-                btn -> { InfoPanelConfig.setPosition(Position.BOTTOM_LEFT); rebuildWidgets(); })
-                .bounds(cx - w / 2, y, hw, BTN_H).build());
-        this.addRenderableWidget(Button.builder(
-                Component.literal(pos(Position.BOTTOM_RIGHT) + "Низ-Право ↘"),
-                btn -> { InfoPanelConfig.setPosition(Position.BOTTOM_RIGHT); rebuildWidgets(); })
-                .bounds(cx + 2, y, hw, BTN_H).build());
-        y += STEP + 6;
-
-        // Редактировать позицию (drag)
-        this.addRenderableWidget(
-            Button.builder(Component.literal("[ F8 ]  Редактировать позицию мышью"),
-                btn -> this.minecraft.setScreen(new PanelEditScreen()))
-                .bounds(cx - w / 2, y, w, BTN_H).build());
-        y += STEP;
-
-        // Сброс позиции
-        this.addRenderableWidget(
-            Button.builder(Component.literal("Сброс позиции"),
-                btn -> { InfoPanelConfig.panelX = -1; InfoPanelConfig.panelY = -1; InfoPanelConfig.save(); })
-                .bounds(cx - 60, y, 120, BTN_H).build());
-        y += STEP;
-
-        // Закрыть — прямо под сбросом (только на этой вкладке)
-        addCloseButton(cx, y);
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // Вкладка 1 — Строки (тоглы + цвет)
-    // ════════════════════════════════════════════════════════════════════
-    private void buildTabRows(int cx) {
-        int colW = (this.width / 2) - 12;
-        int btnW = colW - 28;
-        int lx   = cx - colW - 4;
-        int rx   = cx + 4;
-        int y    = CONTENT_Y;
-
-        // Левая колонка
-        addRow(lx, btnW, y + STEP * 0, "Координаты XYZ",
-                InfoPanelConfig::isShowCoords, InfoPanelConfig::setShowCoords,
-                () -> InfoPanelConfig.colorCoords,
-                v -> { InfoPanelConfig.colorCoords = v; InfoPanelConfig.save(); });
-        addRow(lx, btnW, y + STEP * 1, "Биом",
-                InfoPanelConfig::isShowBiome, InfoPanelConfig::setShowBiome,
-                () -> InfoPanelConfig.colorBiome,
-                v -> { InfoPanelConfig.colorBiome = v; InfoPanelConfig.save(); });
-        addRow(lx, btnW, y + STEP * 2, "FPS",
-                InfoPanelConfig::isShowFps, InfoPanelConfig::setShowFps,
-                () -> InfoPanelConfig.colorFps,
-                v -> { InfoPanelConfig.colorFps = v; InfoPanelConfig.save(); });
-        addRow(lx, btnW, y + STEP * 3, "Пинг",
-                InfoPanelConfig::isShowPing, InfoPanelConfig::setShowPing,
-                () -> InfoPanelConfig.colorPing,
-                v -> { InfoPanelConfig.colorPing = v; InfoPanelConfig.save(); });
-        addRow(lx, btnW, y + STEP * 4, "Сессия",
-                InfoPanelConfig::isShowSession, InfoPanelConfig::setShowSession,
-                () -> InfoPanelConfig.colorSession,
-                v -> { InfoPanelConfig.colorSession = v; InfoPanelConfig.save(); });
-
-        // Правая колонка
-        addRow(rx, btnW, y + STEP * 0, "TPS",
-                InfoPanelConfig::isShowTps, InfoPanelConfig::setShowTps,
-                () -> InfoPanelConfig.colorTps,
-                v -> { InfoPanelConfig.colorTps = v; InfoPanelConfig.save(); });
-        addRow(rx, btnW, y + STEP * 1, "Игровое время",
-                InfoPanelConfig::isShowTime, InfoPanelConfig::setShowTime,
-                () -> InfoPanelConfig.colorTime,
-                v -> { InfoPanelConfig.colorTime = v; InfoPanelConfig.save(); });
-        addRow(rx, btnW, y + STEP * 2, "Игроки онлайн",
-                InfoPanelConfig::isShowPlayers, InfoPanelConfig::setShowPlayers,
-                () -> InfoPanelConfig.colorPlayers,
-                v -> { InfoPanelConfig.colorPlayers = v; InfoPanelConfig.save(); });
-        addToggle(rx, btnW, y + STEP * 3, "Таймеры эффектов",
-                InfoPanelConfig::isShowEffectTimers, InfoPanelConfig::setShowEffectTimers);
-        addToggle(rx, btnW, y + STEP * 4, "Оверлей света",
-                InfoPanelConfig::isShowLightOverlay, InfoPanelConfig::setShowLightOverlay);
-        addToggle(rx, btnW, y + STEP * 5, "Слайм чанки",
-                InfoPanelConfig::isShowSlimeChunks, InfoPanelConfig::setShowSlimeChunks);
-        // Направление (текст в панели) и компас-полоса — отдельно
-        addRow(lx, btnW, y + STEP * 5, "Направление (текст)",
-                InfoPanelConfig::isShowDirection, InfoPanelConfig::setShowDirection,
-                () -> InfoPanelConfig.colorDirection,
-                v -> { InfoPanelConfig.colorDirection = v; InfoPanelConfig.save(); });
-        addRow(lx, btnW, y + STEP * 6, "Прочность предметов",
-                InfoPanelConfig::isShowDurability, InfoPanelConfig::setShowDurability,
-                () -> InfoPanelConfig.colorDurability,
-                v -> { InfoPanelConfig.colorDurability = v; InfoPanelConfig.save(); });
-        addToggle(rx, btnW, y + STEP * 6, "Компас-полоса",
-                InfoPanelConfig::isShowCompassBar, InfoPanelConfig::setShowCompassBar);
-
-        addCloseButton(cx, y + STEP * 7 + 4);
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // Вкладка 2 — WAILA & Прочее
-    // ════════════════════════════════════════════════════════════════════
-    private void buildTabWaila(int cx) {
-        int w = 220;
-        int y = CONTENT_Y;
-
-        // Фон WAILA
-        this.addRenderableWidget(new AbstractSliderButton(cx - w / 2, y, w, BTN_H,
-                Component.literal("Фон WAILA: " + InfoPanelConfig.getWailaBgAlpha()),
-                InfoPanelConfig.getWailaBgAlpha() / 255.0) {
-            @Override protected void updateMessage() {
-                InfoPanelConfig.setWailaBgAlpha((int)(value * 255));
-                setMessage(Component.literal("Фон WAILA: " + InfoPanelConfig.getWailaBgAlpha()));
-            }
-            @Override protected void applyValue() { InfoPanelConfig.setWailaBgAlpha((int)(value * 255)); }
-        });
+        addPosBtn(x,        y, hw, Position.BOTTOM_LEFT,  t("infopanel.config.panel.bottomleft"));
+        addPosBtn(x + hw + 2, y, hw, Position.BOTTOM_RIGHT, t("infopanel.config.panel.bottomright"));
         y += STEP + 4;
 
-        // Заголовок позиции WAILA
+        this.addRenderableWidget(Button.builder(
+            Component.literal("§b" + t("infopanel.config.panel.edit")),
+            btn -> this.minecraft.setScreen(new PanelEditScreen()))
+            .bounds(x, y, w, BTN_H).build());
+        y += STEP + 8;
+
+        // Секция: Сброс
+        y = sectionY(y);
+        y += 4;
+
+        int rw = (w - 4) / 3;
+        this.addRenderableWidget(Button.builder(
+            Component.literal("§7↺ " + t("infopanel.config.panel.reset.panel")),
+            btn -> { InfoPanelConfig.panelX = -1; InfoPanelConfig.panelY = -1; InfoPanelConfig.save(); })
+            .bounds(x, y, rw, BTN_H).build());
+        this.addRenderableWidget(Button.builder(
+            Component.literal("§7↺ " + t("infopanel.config.panel.reset.compass")),
+            btn -> { InfoPanelConfig.compassX = -1; InfoPanelConfig.compassY = -1; InfoPanelConfig.save(); })
+            .bounds(x + rw + 2, y, rw, BTN_H).build());
+        this.addRenderableWidget(Button.builder(
+            Component.literal("§7↺ " + t("infopanel.config.panel.reset.dur")),
+            btn -> { InfoPanelConfig.durabilityX = -1; InfoPanelConfig.durabilityY = -1; InfoPanelConfig.save(); })
+            .bounds(x + (rw + 2) * 2, y, rw, BTN_H).build());
+    }
+
+    private void addPosBtn(int x, int y, int w, Position p, String label) {
+        boolean active = InfoPanelConfig.getPosition() == p;
+        this.addRenderableWidget(Button.builder(
+            Component.literal((active ? "§a● " : "§7○ ") + label),
+            btn -> { InfoPanelConfig.setPosition(p); rebuildWidgets(); })
+            .bounds(x, y, w, BTN_H).build());
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Вкладка 1 — Строки HUD
+    // ════════════════════════════════════════════════════════════════════
+    private void buildRows() {
+        int x = contentX();
+        int y = contentY();
+
+        // Вычисляем максимальную ширину кнопки левой колонки
+        // (кнопка + ColorButton 22px + зазор 2px = +24)
+        String[] leftLabels = {
+            t("infopanel.config.rows.coords"),
+            t("infopanel.config.rows.direction"),
+            t("infopanel.config.rows.biome"),
+            t("infopanel.config.rows.time"),
+            t("infopanel.config.rows.session"),
+            t("infopanel.config.rows.durability"),
+            t("infopanel.config.rows.players")
+        };
+        int maxLeftBtnW = 0;
+        for (String lbl : leftLabels) {
+            int bw = this.font.width(lbl) + 28;
+            if (bw > maxLeftBtnW) maxLeftBtnW = bw;
+        }
+        // Правая колонка начинается после самой широкой кнопки + ColorButton + отступ
+        int lx = x;
+        int rx = x + maxLeftBtnW + 24 + 8; // кнопка + ColorButton(22) + зазор(2) + отступ(8)
+        int ly = y, ry = y;
+
+        // Левая колонка
+        addRow(lx, ly, t("infopanel.config.rows.coords"),
+            InfoPanelConfig::isShowCoords, InfoPanelConfig::setShowCoords,
+            () -> InfoPanelConfig.colorCoords, v -> { InfoPanelConfig.colorCoords = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.direction"),
+            InfoPanelConfig::isShowDirection, InfoPanelConfig::setShowDirection,
+            () -> InfoPanelConfig.colorDirection, v -> { InfoPanelConfig.colorDirection = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.biome"),
+            InfoPanelConfig::isShowBiome, InfoPanelConfig::setShowBiome,
+            () -> InfoPanelConfig.colorBiome, v -> { InfoPanelConfig.colorBiome = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.time"),
+            InfoPanelConfig::isShowTime, InfoPanelConfig::setShowTime,
+            () -> InfoPanelConfig.colorTime, v -> { InfoPanelConfig.colorTime = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.session"),
+            InfoPanelConfig::isShowSession, InfoPanelConfig::setShowSession,
+            () -> InfoPanelConfig.colorSession, v -> { InfoPanelConfig.colorSession = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.durability"),
+            InfoPanelConfig::isShowDurability, InfoPanelConfig::setShowDurability,
+            () -> InfoPanelConfig.colorDurability, v -> { InfoPanelConfig.colorDurability = v; InfoPanelConfig.save(); });
+        ly += STEP;
+        addRow(lx, ly, t("infopanel.config.rows.players"),
+            InfoPanelConfig::isShowPlayers, InfoPanelConfig::setShowPlayers,
+            () -> InfoPanelConfig.colorPlayers, v -> { InfoPanelConfig.colorPlayers = v; InfoPanelConfig.save(); });
+
+        // Правая колонка
+        addRow(rx, ry, "FPS",
+            InfoPanelConfig::isShowFps, InfoPanelConfig::setShowFps,
+            () -> InfoPanelConfig.colorFps, v -> { InfoPanelConfig.colorFps = v; InfoPanelConfig.save(); });
+        ry += STEP;
+        addRow(rx, ry, t("infopanel.config.rows.ping"),
+            InfoPanelConfig::isShowPing, InfoPanelConfig::setShowPing,
+            () -> InfoPanelConfig.colorPing, v -> { InfoPanelConfig.colorPing = v; InfoPanelConfig.save(); });
+        ry += STEP;
+        addRow(rx, ry, "TPS",
+            InfoPanelConfig::isShowTps, InfoPanelConfig::setShowTps,
+            () -> InfoPanelConfig.colorTps, v -> { InfoPanelConfig.colorTps = v; InfoPanelConfig.save(); });
+        ry += STEP;
+        addToggle(rx, ry, t("infopanel.config.rows.effects"),
+            InfoPanelConfig::isShowEffectTimers, InfoPanelConfig::setShowEffectTimers);
+        ry += STEP;
+        addToggle(rx, ry, t("infopanel.config.rows.compass"),
+            InfoPanelConfig::isShowCompassBar, InfoPanelConfig::setShowCompassBar);
+        ry += STEP;
+        addToggle(rx, ry, t("infopanel.config.rows.light"),
+            InfoPanelConfig::isShowLightOverlay, InfoPanelConfig::setShowLightOverlay);
+        ry += STEP;
+        addToggle(rx, ry, t("infopanel.config.rows.slime"),
+            InfoPanelConfig::isShowSlimeChunks, InfoPanelConfig::setShowSlimeChunks);
+        ry += STEP + 8;
+
+        // Секция: Лог предметов
+        int fullW = contentW();
+        addToggle(x, ry, t("infopanel.config.rows.pickuplog"),
+            InfoPanelConfig::isShowPickupLog, InfoPanelConfig::setShowPickupLog);
+        ry += STEP;
+
+        // Слайдер фона лога
+        addSlider(x, ry, Math.min(fullW, 200), "infopanel.config.rows.pickuplog.bg",
+            InfoPanelConfig.getPickupLogBgAlpha() / 255.0,
+            v -> InfoPanelConfig.setPickupLogBgAlpha((int)(v * 255)),
+            v -> t("infopanel.config.rows.pickuplog.bg") + (int)(v * 255));
+        ry += STEP;
+
+        // Слайдер количества предметов (1–20)
+        addSlider(x, ry, Math.min(fullW, 200), "infopanel.config.rows.pickuplog.max",
+            (InfoPanelConfig.getPickupLogMaxItems() - 1) / 19.0,
+            v -> InfoPanelConfig.setPickupLogMaxItems((int)(1 + v * 19)),
+            v -> t("infopanel.config.rows.pickuplog.max") + (int)(1 + v * 19));
+        ry += STEP;
+
+        // Слайдер времени показа (2–20 сек)
+        addSlider(x, ry, Math.min(fullW, 200), "infopanel.config.rows.pickuplog.lifetime",
+            (InfoPanelConfig.getPickupLogLifetime() - 2) / 18.0,
+            v -> InfoPanelConfig.setPickupLogLifetime((int)(2 + v * 18)),
+            v -> t("infopanel.config.rows.pickuplog.lifetime") + (int)(2 + v * 18) + "s");
+        ry += STEP;
+
+        // Слайдер масштаба (0.5–2.0)
+        addSlider(x, ry, Math.min(fullW, 200), "infopanel.config.rows.pickuplog.scale",
+            (InfoPanelConfig.getPickupLogScale() - 0.5) / 1.5,
+            v -> InfoPanelConfig.setPickupLogScale((float)(0.5 + v * 1.5)),
+            v -> String.format(t("infopanel.config.rows.pickuplog.scale") + "%.1f\u00d7", 0.5 + v * 1.5));
+        ry += STEP;
+
+        this.addRenderableWidget(Button.builder(
+            Component.literal("§7↺ " + t("infopanel.config.rows.pickuplog.reset")),
+            btn -> InfoPanelConfig.setPickupLogPos(-1, -1))
+            .bounds(x, ry, this.font.width(t("infopanel.config.rows.pickuplog.reset")) + 28, BTN_H).build());
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Вкладка 2 — WAILA
+    // ════════════════════════════════════════════════════════════════════
+    private void buildWaila() {
+        int x = contentX();
+        int w = contentW();
+        int y = contentY() + 8;
+
+        // Секция: Внешний вид
+        y = sectionY(y); y += 4;
+
+        addSlider(x, y, w, "infopanel.config.waila.bg",
+            InfoPanelConfig.getWailaBgAlpha() / 255.0,
+            v -> InfoPanelConfig.setWailaBgAlpha((int)(v * 255)),
+            v -> t("infopanel.config.waila.bg") + (int)(v * 255));
+        y += STEP;
+
+        addRow(x, y, t("infopanel.config.waila.color"),
+            InfoPanelConfig::isShowTargetBlock, InfoPanelConfig::setShowTargetBlock,
+            () -> InfoPanelConfig.colorTargetBlock,
+            v -> { InfoPanelConfig.colorTargetBlock = v; InfoPanelConfig.save(); });
+        y += STEP + 8;
+
+        // Секция: Позиция WAILA
+        y = sectionY(y); y += 4;
+
         int hw = w / 2 - 2;
-        this.addRenderableWidget(Button.builder(
-                Component.literal(waila(InfoPanelConfig.WailaPosition.TOP_CENTER) + "↑ Верх-Центр"),
-                btn -> { InfoPanelConfig.setWailaPosition(InfoPanelConfig.WailaPosition.TOP_CENTER); rebuildWidgets(); })
-                .bounds(cx - w / 2, y, hw, BTN_H).build());
-        this.addRenderableWidget(Button.builder(
-                Component.literal(waila(InfoPanelConfig.WailaPosition.TOP_RIGHT) + "Верх-Право ↗"),
-                btn -> { InfoPanelConfig.setWailaPosition(InfoPanelConfig.WailaPosition.TOP_RIGHT); rebuildWidgets(); })
-                .bounds(cx + 2, y, hw, BTN_H).build());
+        addWailaBtn(x,        y, hw, InfoPanelConfig.WailaPosition.TOP_CENTER,   t("infopanel.config.waila.topcenter"));
+        addWailaBtn(x + hw + 2, y, hw, InfoPanelConfig.WailaPosition.TOP_RIGHT,  t("infopanel.config.waila.topright"));
         y += STEP;
-        this.addRenderableWidget(Button.builder(
-                Component.literal(waila(InfoPanelConfig.WailaPosition.BOTTOM_CENTER) + "↓ Низ-Центр"),
-                btn -> { InfoPanelConfig.setWailaPosition(InfoPanelConfig.WailaPosition.BOTTOM_CENTER); rebuildWidgets(); })
-                .bounds(cx - w / 2, y, hw, BTN_H).build());
-        this.addRenderableWidget(Button.builder(
-                Component.literal(waila(InfoPanelConfig.WailaPosition.TOP_LEFT) + "↖ Верх-Лево"),
-                btn -> { InfoPanelConfig.setWailaPosition(InfoPanelConfig.WailaPosition.TOP_LEFT); rebuildWidgets(); })
-                .bounds(cx + 2, y, hw, BTN_H).build());
-        y += STEP + 10;
+        addWailaBtn(x,        y, hw, InfoPanelConfig.WailaPosition.BOTTOM_CENTER, t("infopanel.config.waila.botcenter"));
+        addWailaBtn(x + hw + 2, y, hw, InfoPanelConfig.WailaPosition.TOP_LEFT,   t("infopanel.config.waila.topleft"));
+    }
 
-        // Цвет текста WAILA-блока
-        int btnW = w - 28;
-        addRow(cx - w / 2, btnW, y, "Цвет названия блока",
-                InfoPanelConfig::isShowTargetBlock, InfoPanelConfig::setShowTargetBlock,
-                () -> InfoPanelConfig.colorTargetBlock,
-                v -> { InfoPanelConfig.colorTargetBlock = v; InfoPanelConfig.save(); });
-        y += STEP;
-
-        addCloseButton(cx, y + 4);
+    private void addWailaBtn(int x, int y, int w, InfoPanelConfig.WailaPosition p, String label) {
+        boolean active = InfoPanelConfig.getWailaPosition() == p;
+        this.addRenderableWidget(Button.builder(
+            Component.literal((active ? "§a● " : "§7○ ") + label),
+            btn -> { InfoPanelConfig.setWailaPosition(p); rebuildWidgets(); })
+            .bounds(x, y, w, BTN_H).build());
     }
 
     // ════════════════════════════════════════════════════════════════════
     // Вкладка 3 — Структуры
     // ════════════════════════════════════════════════════════════════════
-    private void buildTabStructures(int cx) {
-        int w = 220;
-        int y = CONTENT_Y;
+    private void buildStructures() {
+        int x = contentX();
+        int y = contentY();
 
-        // Мастер-тогл
-        addToggle(cx - w / 2, w, y, "Показывать структуры (синглплейер)",
-                InfoPanelConfig::isShowStructures, InfoPanelConfig::setShowStructures);
+        addToggle(x, y, t("infopanel.config.struct.master"),
+            InfoPanelConfig::isShowStructures, InfoPanelConfig::setShowStructures);
         y += STEP + 4;
-
-        // Левая колонка — оверворлд
-        int colW = (this.width / 2) - 12;
-        int btnW = colW - 4;
-        int lx = cx - colW - 4;
-        int rx = cx + 4;
-
-        addToggle(lx, btnW, y + STEP * 0, "§2Деревня",
-                InfoPanelConfig::isShowStructVillage,    InfoPanelConfig::setShowStructVillage);
-        addToggle(lx, btnW, y + STEP * 1, "§cАванпост разбойников",
-                InfoPanelConfig::isShowStructOutpost,    InfoPanelConfig::setShowStructOutpost);
-        addToggle(lx, btnW, y + STEP * 2, "§9Океанский монумент",
-                InfoPanelConfig::isShowStructMonument,   InfoPanelConfig::setShowStructMonument);
-        addToggle(lx, btnW, y + STEP * 3, "§6Крепость (End)",
-                InfoPanelConfig::isShowStructStronghold, InfoPanelConfig::setShowStructStronghold);
-        addToggle(lx, btnW, y + STEP * 4, "§eПустынный храм",
-                InfoPanelConfig::isShowStructDesert,     InfoPanelConfig::setShowStructDesert);
-
-        // Правая колонка — незер
-        addToggle(rx, btnW, y + STEP * 0, "§4Крепость Незера",
-                InfoPanelConfig::isShowStructFortress,   InfoPanelConfig::setShowStructFortress);
-        addToggle(rx, btnW, y + STEP * 1, "§5Бастион",
-                InfoPanelConfig::isShowStructBastion,    InfoPanelConfig::setShowStructBastion);
-
-        addCloseButton(cx, y + STEP * 5 + 4);
-    }
-
-    private void addCloseButton(int cx, int y) {
-        this.addRenderableWidget(
-            Button.builder(Component.literal("Закрыть"),
-                btn -> { InfoPanelConfig.save(); this.minecraft.setScreen(parent); })
-                .bounds(cx - 50, y, 100, BTN_H).build()
-        );
+        addToggle(x, y, t("infopanel.config.struct.village"),
+            InfoPanelConfig::isShowStructVillage, InfoPanelConfig::setShowStructVillage);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.outpost"),
+            InfoPanelConfig::isShowStructOutpost, InfoPanelConfig::setShowStructOutpost);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.monument"),
+            InfoPanelConfig::isShowStructMonument, InfoPanelConfig::setShowStructMonument);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.stronghold"),
+            InfoPanelConfig::isShowStructStronghold, InfoPanelConfig::setShowStructStronghold);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.desert"),
+            InfoPanelConfig::isShowStructDesert, InfoPanelConfig::setShowStructDesert);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.fortress"),
+            InfoPanelConfig::isShowStructFortress, InfoPanelConfig::setShowStructFortress);
+        y += STEP;
+        addToggle(x, y, t("infopanel.config.struct.bastion"),
+            InfoPanelConfig::isShowStructBastion, InfoPanelConfig::setShowStructBastion);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // Хелперы
+    // Вкладка 4 — Звуки
+    // ════════════════════════════════════════════════════════════════════
+    private void buildSounds() {
+        int x  = contentX();
+        int y  = contentY();
+        int sw = Math.min(contentW(), 200); // ширина слайдера — не шире 200px
+
+        addToggle(x, y, t("infopanel.config.sounds.ambient"),
+            InfoPanelConfig::isPortalSoundEnabled, InfoPanelConfig::setPortalSoundEnabled);
+        y += STEP;
+        addSlider(x, y, sw, "infopanel.config.sounds.ambient.volume",
+            InfoPanelConfig.getPortalSoundVolume(),
+            v -> InfoPanelConfig.setPortalSoundVolume(v.floatValue()),
+            v -> t("infopanel.config.sounds.ambient.volume") + (int)(v * 100) + "%");
+        y += STEP + 8;
+
+        addToggle(x, y, t("infopanel.config.sounds.travel"),
+            InfoPanelConfig::isPortalTravelEnabled, InfoPanelConfig::setPortalTravelEnabled);
+        y += STEP;
+        addSlider(x, y, sw, "infopanel.config.sounds.travel.volume",
+            InfoPanelConfig.getPortalTravelVolume(),
+            v -> InfoPanelConfig.setPortalTravelVolume(v.floatValue()),
+            v -> t("infopanel.config.sounds.travel.volume") + (int)(v * 100) + "%");
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Хелперы виджетов
     // ════════════════════════════════════════════════════════════════════
 
-    private String pos(Position p) {
-        return InfoPanelConfig.getPosition() == p ? "§a" : "§7";
+    /** Возвращает Y после заголовка секции (сам заголовок рисуется в render) */
+    private int sectionY(int y) {
+        sectionHeaders.add(y);
+        return y + 12; // высота заголовка
     }
 
-    private String waila(InfoPanelConfig.WailaPosition p) {
-        return InfoPanelConfig.getWailaPosition() == p ? "§a" : "§7";
+    // Список Y-координат заголовков секций для рендера
+    private final java.util.List<Integer> sectionHeaders = new java.util.ArrayList<>();
+    // Список названий секций
+    private final java.util.List<String> sectionNames = new java.util.ArrayList<>();
+
+    private void addSlider(int x, int y, int w, String labelKey,
+                           double initVal,
+                           Consumer<Double> setter,
+                           java.util.function.Function<Double, String> msgFn) {
+        String initMsg = msgFn.apply(initVal);
+        this.addRenderableWidget(new AbstractSliderButton(x, y, w, SLIDER_H,
+                Component.literal(initMsg), initVal) {
+            @Override protected void updateMessage() {
+                setter.accept(value);
+                setMessage(Component.literal(msgFn.apply(value)));
+            }
+            @Override protected void applyValue() { setter.accept(value); }
+        });
     }
 
-    private void addToggle(int x, int btnW, int y, String label,
-                           java.util.function.BooleanSupplier getter,
-                           java.util.function.Consumer<Boolean> setter) {
-        this.addRenderableWidget(Button.builder(makeLabel(label, getter.getAsBoolean()), btn -> {
+    private void addToggle(int x, int y, String label,
+                           BooleanSupplier getter, Consumer<Boolean> setter) {
+        // Ширина = ширина текста + паддинг кнопки (8px с каждой стороны)
+        String fullLabel = (getter.getAsBoolean() ? "§a✔ §f" : "§c✘ §7") + label;
+        int bw = this.font.width(label) + 28; // 28 = иконка + паддинги
+        this.addRenderableWidget(Button.builder(makeToggleLabel(label, getter.getAsBoolean()), btn -> {
             setter.accept(!getter.getAsBoolean());
-            btn.setMessage(makeLabel(label, getter.getAsBoolean()));
-        }).bounds(x, y, btnW, BTN_H).build());
+            btn.setMessage(makeToggleLabel(label, getter.getAsBoolean()));
+        }).bounds(x, y, bw, BTN_H).build());
     }
 
-    private void addRow(int x, int btnW, int y, String label,
-                        java.util.function.BooleanSupplier getter,
-                        java.util.function.Consumer<Boolean> setter,
-                        java.util.function.IntSupplier colorGetter,
-                        java.util.function.IntConsumer colorSetter) {
-        this.addRenderableWidget(Button.builder(makeLabel(label, getter.getAsBoolean()), btn -> {
+    private void addRow(int x, int y, String label,
+                        BooleanSupplier getter, Consumer<Boolean> setter,
+                        IntSupplier colorGetter, IntConsumer colorSetter) {
+        int bw = this.font.width(label) + 28;
+        this.addRenderableWidget(Button.builder(makeToggleLabel(label, getter.getAsBoolean()), btn -> {
             setter.accept(!getter.getAsBoolean());
-            btn.setMessage(makeLabel(label, getter.getAsBoolean()));
-        }).bounds(x, y, btnW, BTN_H).build());
-        this.addRenderableWidget(new ColorButton(x + btnW + 2, y, 22, BTN_H,
+            btn.setMessage(makeToggleLabel(label, getter.getAsBoolean()));
+        }).bounds(x, y, bw, BTN_H).build());
+        this.addRenderableWidget(new ColorButton(x + bw + 2, y, 22, BTN_H,
                 colorGetter::getAsInt,
                 btn -> colorSetter.accept(cycleColor(colorGetter.getAsInt()))));
     }
 
-    private Component makeLabel(String label, boolean enabled) {
-        return Component.literal((enabled ? "§a✔" : "§c✘") + " §f" + label);
+    private Component makeToggleLabel(String label, boolean enabled) {
+        return Component.literal((enabled ? "§a✔ §f" : "§c✘ §7") + label);
     }
 
     private int cycleColor(int current) {
@@ -350,20 +489,67 @@ public class InfoPanelConfigScreen extends Screen {
     // Рендер
     // ════════════════════════════════════════════════════════════════════
 
+    // Названия секций для каждой вкладки
+    private static final String[][] SECTION_NAMES = {
+        // Панель
+        { "infopanel.section.appearance", "infopanel.section.position", "infopanel.section.reset" },
+        // Строки
+        { "infopanel.section.info", "infopanel.section.perf", "infopanel.section.overlays" },
+        // WAILA
+        { "infopanel.section.appearance", "infopanel.section.position" },
+        // Структуры
+        { "infopanel.section.general", "infopanel.section.overworld", "infopanel.section.nether" },
+        // Звуки
+        { "infopanel.section.portal_hum", "infopanel.section.portal_travel" }
+    };
+
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(graphics, mouseX, mouseY, partialTick);
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // Полноэкранный тёмный фон (заменяет renderBackground)
+        g.fill(0, 0, this.width, this.height, 0xCC000000);
 
-        // Заголовок
-        graphics.drawCenteredString(this.font, this.title, this.width / 2, 3, 0xFFFFFF);
+        // ── Левая навигационная панель ────────────────────────────────
+        g.fill(0, 0, NAV_W, this.height, COL_NAV_BG);
+        // Разделитель
+        g.fill(NAV_W, 0, NAV_W + 1, this.height, 0x55AAAAAA);
 
-        // Разделитель под вкладками
-        int lineY = TAB_Y + TAB_H + 3;
-        graphics.fill(10, lineY, this.width - 10, lineY + 1, 0x88AAAAAA);
+        // Заголовок мода в навигации
+        g.drawCenteredString(this.font, "§bInfoPanel", NAV_W / 2, 8, 0xFFFFFF);
+        g.fill(NAV_PAD, 18, NAV_W - NAV_PAD, 19, 0x44AAAAAA);
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        // Подсветка активной категории
+        int navY = contentY() + 4;
+        for (int i = 0; i < CAT_KEYS.length; i++) {
+            if (i == activeTab) {
+                g.fill(NAV_PAD - 2, navY + i * (NAV_BTN_H + NAV_GAP) - 1,
+                       NAV_W - NAV_PAD + 2, navY + i * (NAV_BTN_H + NAV_GAP) + NAV_BTN_H + 1,
+                       COL_NAV_ACTIVE);
+            }
+        }
+
+        // ── Область контента ─────────────────────────────────────────
+        g.fill(NAV_W + 1, 0, this.width, this.height, COL_CONTENT_BG);
+
+        // Заголовок активной вкладки
+        String tabTitle = t(CAT_KEYS[activeTab]).trim();
+        g.drawString(this.font, "§e" + CAT_ICONS[activeTab] + " §f" + tabTitle,
+            contentX(), 28, 0xFFFFFF, true);
+
+        // ── Заголовки секций ─────────────────────────────────────────
+        String[] secNames = activeTab < SECTION_NAMES.length ? SECTION_NAMES[activeTab] : new String[0];
+        for (int i = 0; i < sectionHeaders.size(); i++) {
+            int sy = sectionHeaders.get(i);
+            String secKey = i < secNames.length ? secNames[i] : "";
+            String secLabel = secKey.isEmpty() ? "" : t(secKey);
+            if (!secLabel.isEmpty()) {
+                // Только текст секции — без линии
+                g.drawString(this.font, "§6" + secLabel, contentX(), sy + 1, COL_SECTION_TXT, false);
+                // Короткая линия только справа от текста
+                int tw = this.font.width(secLabel) + contentX() + 6;
+                g.fill(tw, sy + 5, contentX() + contentW(), sy + 6, 0x44AAAAAA);
+            }
+        }
+
+        super.render(g, mouseX, mouseY, partialTick);
     }
-
-    @Override
-    public boolean isPauseScreen() { return false; }
 }

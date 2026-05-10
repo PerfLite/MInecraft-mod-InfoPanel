@@ -2,6 +2,7 @@ package com.infopanel.client;
 
 import com.infopanel.config.InfoPanelConfig;
 import com.infopanel.event.CompassRenderer;
+import com.infopanel.event.Lang;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -24,8 +25,12 @@ public class PanelEditScreen extends Screen {
     public static int durabilityW = 100;
     public static int durabilityH = 10;
 
+    // Bounds лога предметов — передаются из PickupLogRenderer
+    public static int pickupLogW = 160;
+    public static int pickupLogH = 18;
+
     // Что сейчас тащим
-    private enum DragTarget { NONE, PANEL, COMPASS, DURABILITY }
+    private enum DragTarget { NONE, PANEL, COMPASS, DURABILITY, PICKUP_LOG }
     private DragTarget dragging = DragTarget.NONE;
     private int dragOffsetX = 0;
     private int dragOffsetY = 0;
@@ -42,6 +47,12 @@ public class PanelEditScreen extends Screen {
 
     @Override
     public boolean isPauseScreen() { return false; }
+
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Не рисуем стандартный фон — он размывает игровой экран
+        // Вместо этого рисуем лёгкий оверлей в методе render()
+    }
 
     // ─── Позиции элементов ───────────────────────────────────────────────
 
@@ -84,6 +95,16 @@ public class PanelEditScreen extends Screen {
         return this.height - 60;
     }
 
+    private int getPickupLogX() {
+        if (InfoPanelConfig.getPickupLogX() >= 0) return InfoPanelConfig.getPickupLogX();
+        return this.width - pickupLogW - 5;
+    }
+
+    private int getPickupLogY() {
+        if (InfoPanelConfig.getPickupLogY() >= 0) return InfoPanelConfig.getPickupLogY();
+        return this.height - 55 - pickupLogH;
+    }
+
     // ─── Ввод ────────────────────────────────────────────────────────────
 
     @Override
@@ -107,6 +128,16 @@ public class PanelEditScreen extends Screen {
                 dragging = DragTarget.DURABILITY;
                 dragOffsetX = (int)(mx - dx2);
                 dragOffsetY = (int)(my - dy2);
+                return true;
+            }
+        }
+
+        if (InfoPanelConfig.isShowPickupLog()) {
+            int plx = getPickupLogX(), ply = getPickupLogY();
+            if (mx >= plx && mx <= plx + pickupLogW && my >= ply && my <= ply + pickupLogH) {
+                dragging = DragTarget.PICKUP_LOG;
+                dragOffsetX = (int)(mx - plx);
+                dragOffsetY = (int)(my - ply);
                 return true;
             }
         }
@@ -160,6 +191,13 @@ public class PanelEditScreen extends Screen {
             return true;
         }
 
+        if (dragging == DragTarget.PICKUP_LOG) {
+            int nx = Math.max(0, Math.min((int)(mx - dragOffsetX), this.width  - pickupLogW));
+            int ny = Math.max(0, Math.min((int)(my - dragOffsetY), this.height - pickupLogH));
+            InfoPanelConfig.setPickupLogPos(nx, ny);
+            return true;
+        }
+
         return super.mouseDragged(mx, my, button, dx, dy);
     }
 
@@ -185,7 +223,7 @@ public class PanelEditScreen extends Screen {
         if (pulseCompassF > 1f) { pulseCompassF = 1f; pulseCompassDir = -1; }
         if (pulseCompassF < 0f) { pulseCompassF = 0f; pulseCompassDir =  1; }
 
-        // Полупрозрачный оверлей
+        // Лёгкий полупрозрачный оверлей без размытия (НЕ вызываем renderBackground)
         graphics.fill(0, 0, this.width, this.height, 0x55000000);
 
         // Рисуем рамку панели
@@ -204,26 +242,36 @@ public class PanelEditScreen extends Screen {
                     pulsePanelF, dragging == DragTarget.DURABILITY, 0x55FF55);
         }
 
+        // Рисуем рамку лога предметов (только если включён)
+        if (InfoPanelConfig.isShowPickupLog()) {
+            drawElementFrame(graphics, getPickupLogX(), getPickupLogY(), pickupLogW, pickupLogH,
+                    pulseCompassF, dragging == DragTarget.PICKUP_LOG, 0xFF55FF);
+        }
+
         // Подсказка сверху
         String hint;
         if (dragging == DragTarget.PANEL) {
-            hint = "§bПанель§r  X: " + InfoPanelConfig.panelX + "  Y: " + InfoPanelConfig.panelY;
+            hint = (Lang.isRussian() ? "§bПанель§r" : "§bPanel§r") + "  X: " + InfoPanelConfig.panelX + "  Y: " + InfoPanelConfig.panelY;
         } else if (dragging == DragTarget.COMPASS) {
-            hint = "§eКомпас§r  X: " + InfoPanelConfig.compassX + "  Y: " + InfoPanelConfig.compassY;
+            hint = (Lang.isRussian() ? "§eКомпас§r" : "§eCompass§r") + "  X: " + InfoPanelConfig.compassX + "  Y: " + InfoPanelConfig.compassY;
         } else if (dragging == DragTarget.DURABILITY) {
-            hint = "§aПрочность§r  X: " + InfoPanelConfig.durabilityX + "  Y: " + InfoPanelConfig.durabilityY;
+            hint = (Lang.isRussian() ? "§aПрочность§r" : "§aDurability§r") + "  X: " + InfoPanelConfig.durabilityX + "  Y: " + InfoPanelConfig.durabilityY;
         } else {
-            hint = "§eРежим редактирования  §7— Тащи панель §b(синяя)§7, компас §e(жёлтая)§7 или прочность §a(зелёная)§7  |  Esc";
+            hint = Lang.isRussian()
+                ? "§eРежим редактирования  §7— Тащи панель §b(синяя)§7, компас §e(жёлтая)§7 или прочность §a(зелёная)§7  |  Esc"
+                : "§eEdit mode  §7— Drag panel §b(blue)§7, compass §e(yellow)§7 or durability §a(green)§7  |  Esc";
         }
         int tw = this.minecraft.font.width(hint.replaceAll("§.", ""));
         graphics.drawString(this.minecraft.font, hint, (this.width - tw) / 2, 6, 0xFFFFFF, true);
 
         // Метки под элементами
-        drawLabel(graphics, "Панель",  getPanelX(),   getPanelY()   + panelH  + 4, panelW,  0xAABBFF);
+        drawLabel(graphics, Lang.isRussian() ? "Панель"    : "Panel",      getPanelX(),   getPanelY()   + panelH  + 4, panelW,  0xAABBFF);
         if (InfoPanelConfig.isShowCompassBar())
-            drawLabel(graphics, "Компас", getCompassX(), getCompassY() + compassH + 4, compassW, 0xFFDD88);
+            drawLabel(graphics, Lang.isRussian() ? "Компас"    : "Compass",   getCompassX(), getCompassY() + compassH + 4, compassW, 0xFFDD88);
         if (InfoPanelConfig.isShowDurability())
-            drawLabel(graphics, "Прочность", getDurabilityX(), getDurabilityY() + durabilityH + 4, durabilityW, 0x88FF88);
+            drawLabel(graphics, Lang.isRussian() ? "Прочность" : "Durability", getDurabilityX(), getDurabilityY() + durabilityH + 4, durabilityW, 0x88FF88);
+        if (InfoPanelConfig.isShowPickupLog())
+            drawLabel(graphics, Lang.isRussian() ? "Предметы" : "Pickup Log", getPickupLogX(), getPickupLogY() + pickupLogH + 4, pickupLogW, 0xFF88FF);
 
         super.render(graphics, mouseX, mouseY, partialTick);
     }

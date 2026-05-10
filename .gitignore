@@ -4,6 +4,7 @@
 build/
 gradle/
 runs/
+run/
 *.iml
 *.ipr
 *.iws
